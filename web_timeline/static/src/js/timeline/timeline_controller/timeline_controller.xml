@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+    <t t-name="web_timeline.View">
+        <Layout display="props.display" className="'h-100 overflow-auto'">
+            <p>Controller</p>
+            <t
+                t-component="props.Renderer"
+                records="model.records"
+                propsYouWant="'Hello world'"
+                archInfo="props.archInfo"
+                fields="props.fields"
+            />
+        </Layout>
+    </t>
+</templates>

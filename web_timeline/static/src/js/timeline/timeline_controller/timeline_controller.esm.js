@@ -1,86 +1,172 @@
-/** @odoo-module alias=web_timeline.TimelineController **/
-/* Copyright 2023 Onestein - Anjeel Haria
- * License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl). */
-import AbstractController from "web.AbstractController";
+import {useOwnedDialogs, useService} from "@web/core/utils/hooks";
+import {Component, onMounted, onWillStart, useRef, useState} from "@odoo/owl";
+import {extractFieldsFromArchInfo} from "@web/model/relational_model/utils";
+import {ListController} from "@web/views/list/list_controller";
 import {FormViewDialog} from "@web/views/view_dialogs/form_view_dialog";
-// Import time from "web.time";
 import {Dialog} from "@web/core/dialog/dialog";
 import {_t} from "@web/core/l10n/translation";
-import {Component} from "@odoo/owl";
 
-export default AbstractController.extend({
-    custom_events: _.extend({}, AbstractController.prototype.custom_events, {
-        onGroupClick: "_onGroupClick",
-        onItemDoubleClick: "_onItemDoubleClick",
-        onUpdate: "_onUpdate",
-        onRemove: "_onRemove",
-        onMove: "_onMove",
-        onAdd: "_onAdd",
-    }),
+export class TimelineController extends ListController {
+    static template = "web_timeline.View";
+    static components = {...ListController.components};
+    static props = {
+        // ...standardViewProps,
+        ...ListController.props,
+        /*
+        AllowSelectors: { type: Boolean, optional: true },
+        editable: { type: Boolean, optional: true },
+        onSelectionChanged: { type: Function, optional: true },
+        showButtons: { type: Boolean, optional: true },
+        Model: Function,
+        Renderer: Function,
+        buttonTemplate: { type: String, optional: true },
+        archInfo: Object,
+        */
+    };
 
-    /**
-     * @override
-     */
-    init: function (parent, model, renderer, params) {
-        this._super.apply(this, arguments);
-        this.open_popup_action = params.open_popup_action;
-        this.date_start = params.date_start;
-        this.date_stop = params.date_stop;
-        this.date_delay = params.date_delay;
-        this.context = params.actionContext;
-        this.moveQueue = [];
-        this.debouncedInternalMove = _.debounce(this.internalMove, 0);
-    },
-    on_detach_callback() {
-        if (this.Dialog) {
-            this.Dialog();
-            this.Dialog = undefined;
-        }
-        return this._super.apply(this, arguments);
-    },
-    /**
-     * @override
-     */
-    update: function (params, options) {
-        const res = this._super.apply(this, arguments);
-        if (_.isEmpty(params)) {
-            return res;
-        }
-        const defaults = _.defaults({}, options, {
-            adjust_window: true,
+    setup() {
+        super.setup();
+        this.orm = useService("orm");
+        this.uiService = useService("ui");
+        this.rootRef = useRef("root");
+        this.state = useState({disabled: false});
+        this.addDialog = useOwnedDialogs();
+        const {activeFields, fields} = extractFieldsFromArchInfo(
+            this.props.archInfo,
+            this.props.fields
+        );
+        // The controller create the model and make it reactive so whenever this.model is
+        // accessed and edited then it'll cause a rerendering
+
+        // This.set_defaults_orig_timeline_view_init(this.props.archInfo, params)
+
+        const modelServices = Object.fromEntries(
+            this.props.Model.services.map((servName) => {
+                return [servName, useService(servName)];
+            })
+        );
+        modelServices.orm = useService("orm");
+        const config = {
+            resModel: this.props.resModel,
+            resId: false,
+            resIds: [],
+            fields,
+            activeFields,
+            isMonoRecord: true,
+            mode: "edit",
+            context: this.props.context,
+        };
+        this.model = useState(new this.props.Model(this.env, {config}, modelServices));
+        this.props.model = this.model;
+
+        onMounted(() => {
+            this.uiActiveElement = this.uiService.activeElement;
         });
-        const domains = params.domain || this.renderer.last_domains || [];
-        const contexts = params.context || [];
-        const group_bys = params.groupBy || this.renderer.last_group_bys || [];
-        this.last_domains = domains;
-        this.last_contexts = contexts;
-        // Select the group by
-        let n_group_bys = group_bys;
-        if (!n_group_bys.length && this.renderer.arch.attrs.default_group_by) {
-            n_group_bys = this.renderer.arch.attrs.default_group_by.split(",");
-        }
-        this.renderer.last_group_bys = n_group_bys;
-        this.renderer.last_domains = domains;
 
-        let fields = this.renderer.fieldNames;
-        fields = _.uniq(fields.concat(n_group_bys));
-        $.when(
-            res,
-            this._rpc({
-                model: this.model.modelName,
-                method: "search_read",
-                kwargs: {
-                    fields: fields,
-                    domain: domains,
-                    order: [{name: this.renderer.arch.attrs.default_group_by}],
-                },
-                context: this.getSession().user_context,
-            }).then((data) =>
-                this.renderer.on_data_loaded(data, n_group_bys, defaults.adjust_window)
+        /*
+        This.model = useState(
+            new this.props.Model(
+                this.orm,
+                this.props.resModel,
+                this.props.fields,
+                this.props.archInfo,
+                this.props.domain
             )
         );
-        return res;
-    },
+        */
+
+        onWillStart(async () => {
+            await this.model.load();
+        });
+    }
+
+    set_defaults_orig_timeline_view_init(viewInfo, params) {
+        // This.modelName = this.controllerParams.modelName;
+        this.modelName = "project.task";
+
+        const action = params.action;
+        this.arch = this.rendererParams.arch;
+        const attrs = this.arch.attrs;
+        const date_start = attrs.date_start;
+        const date_stop = attrs.date_stop;
+        const date_delay = attrs.date_delay;
+        const dependency_arrow = attrs.dependency_arrow;
+
+        const fields = viewInfo.fields;
+        let fieldNames = fields.display_name ? ["display_name"] : [];
+        const fieldsToGather = [
+            "date_start",
+            "date_stop",
+            "default_group_by",
+            "progress",
+            "date_delay",
+            attrs.default_group_by,
+        ];
+
+        for (const field of fieldsToGather) {
+            if (attrs[field]) {
+                fieldNames.push(attrs[field]);
+            }
+        }
+
+        const archFieldNames = _.map(
+            _.filter(this.arch.children, (item) => item.tag === "field"),
+            (item) => item.attrs.name
+        );
+        fieldNames = _.union(fieldNames, archFieldNames);
+
+        const colors = this.parse_colors();
+        for (const color of colors) {
+            if (!fieldNames.includes(color.field)) {
+                fieldNames.push(color.field);
+            }
+        }
+
+        if (dependency_arrow) {
+            fieldNames.push(dependency_arrow);
+        }
+
+        const mode = attrs.mode || attrs.default_window || "fit";
+        const min_height = attrs.min_height || 300;
+
+        /*
+        If (!isNullOrUndef(attrs.quick_create_instance)) {
+            this.quick_create_instance = "instance." + attrs.quick_create_instance;
+        }
+        let open_popup_action = false;
+        if (
+            !isNullOrUndef(attrs.event_open_popup) &&
+            utils.toBoolElse(attrs.event_open_popup, true)
+        ) {
+            open_popup_action = attrs.event_open_popup;
+        }
+        */
+        this.rendererParams.mode = mode;
+        this.rendererParams.model = this.modelName;
+        this.rendererParams.view = this;
+        this.rendererParams.options = this._preapre_vis_timeline_options(attrs);
+        // This.rendererParams.can_create = toBoolDefaultTrue(attrs.create);
+        // this.rendererParams.can_update = toBoolDefaultTrue(attrs.edit);
+        // this.rendererParams.can_delete = toBoolDefaultTrue(attrs.delete);
+        this.rendererParams.date_start = date_start;
+        this.rendererParams.date_stop = date_stop;
+        this.rendererParams.date_delay = date_delay;
+        this.rendererParams.colors = colors;
+        this.rendererParams.fieldNames = fieldNames;
+        this.rendererParams.default_group_by = attrs.default_group_by;
+        this.rendererParams.min_height = min_height;
+        this.rendererParams.dependency_arrow = dependency_arrow;
+        this.rendererParams.fields = fields;
+        this.loadParams.modelName = this.modelName;
+        this.loadParams.fieldNames = fieldNames;
+        this.loadParams.default_group_by = attrs.default_group_by;
+        // This.controllerParams.open_popup_action = open_popup_action;
+        this.controllerParams.date_start = date_start;
+        this.controllerParams.date_stop = date_stop;
+        this.controllerParams.date_delay = date_delay;
+        this.controllerParams.actionContext = action.context;
+        this.withSearchPanel = false;
+    }
 
     /**
      * Gets triggered when a group in the timeline is
@@ -90,7 +176,7 @@ export default AbstractController.extend({
      * @param {EventObject} event
      * @returns {jQuery.Deferred}
      */
-    _onGroupClick: function (event) {
+    _onGroupClick(event) {
         const groupField = this.renderer.last_group_bys[0];
         return this.do_action({
             type: "ir.actions.act_window",
@@ -99,7 +185,7 @@ export default AbstractController.extend({
             target: "new",
             views: [[false, "form"]],
         });
-    },
+    }
 
     /**
      * Triggered on double-click on an item in read-only mode (otherwise, we use _onUpdate).
@@ -108,9 +194,9 @@ export default AbstractController.extend({
      * @param {EventObject} event
      * @returns {jQuery.Deferred}
      */
-    _onItemDoubleClick: function (event) {
+    _onItemDoubleClick(event) {
         return this.openItem(event.data.item, false);
-    },
+    }
 
     /**
      * Opens a form view of a clicked timeline
@@ -119,14 +205,14 @@ export default AbstractController.extend({
      * @private
      * @param {EventObject} event
      */
-    _onUpdate: function (event) {
+    _onUpdate(event) {
         const item = event.data.item;
         const item_id = Number(item.evt.id) || item.evt.id;
         return this.openItem(item_id, true);
-    },
+    }
 
     /** Open specified item, either through modal, or by navigating to form view. */
-    openItem: function (item_id, is_editable) {
+    openItem(item_id, is_editable) {
         if (this.open_popup_action) {
             const options = {
                 resModel: this.model.modelName,
@@ -151,7 +237,7 @@ export default AbstractController.extend({
                 mode: is_editable ? "edit" : "readonly",
             });
         }
-    },
+    }
 
     /**
      * Gets triggered when a timeline item is
@@ -160,7 +246,7 @@ export default AbstractController.extend({
      * @private
      * @param {EventObject} event
      */
-    _onMove: function (event) {
+    _onMove(event) {
         const item = event.data.item;
         // Const fields = this.renderer.fields;
         const event_start = item.start;
@@ -172,21 +258,23 @@ export default AbstractController.extend({
         const data = {};
         // In case of a move event, the date_delay stay the same,
         // only date_start and stop must be updated
-        // data[this.date_start] = time.auto_date_to_str(
-        //    event_start,
-        //    fields[this.date_start].type
-        // );
+        /*
+        data[this.date_start] = time.auto_date_to_str(
+            event_start,
+            fields[this.date_start].type
+        );
         if (this.date_stop) {
             // In case of instantaneous event, item.end is not defined
             if (event_end) {
-                // Data[this.date_stop] = time.auto_date_to_str(
-                //   event_end,
-                //    fields[this.date_stop].type
-                // );
+                data[this.date_stop] = time.auto_date_to_str(
+                    event_end,
+                    fields[this.date_stop].type
+                );
             } else {
                 data[this.date_stop] = data[this.date_start];
             }
         }
+        */
         if (this.date_delay && event_end) {
             const diff_seconds = Math.round(
                 (event_end.getTime() - event_start.getTime()) / 1000
@@ -216,7 +304,7 @@ export default AbstractController.extend({
 
             this.debouncedInternalMove();
         });
-    },
+    }
 
     /**
      * Write enqueued moves to Odoo. After all writes are finished it updates
@@ -225,7 +313,7 @@ export default AbstractController.extend({
      *
      * @returns {jQuery.Deferred}
      */
-    internalMove: function () {
+    internalMove() {
         const queues = this.moveQueue.slice();
         this.moveQueue = [];
         const defers = [];
@@ -246,7 +334,7 @@ export default AbstractController.extend({
                 adjust_window: false,
             });
         });
-    },
+    }
 
     /**
      * Triggered when a timeline item gets removed from the view.
@@ -256,7 +344,7 @@ export default AbstractController.extend({
      * @param {EventObject} event
      * @returns {jQuery.Deferred}
      */
-    _onRemove: function (event) {
+    _onRemove(event) {
         var def = $.Deferred();
 
         Dialog.confirm(this, _t("Are you sure you want to delete this record?"), {
@@ -268,7 +356,7 @@ export default AbstractController.extend({
         });
 
         return def;
-    },
+    }
 
     /**
      * Triggered when a timeline item gets added and opens a form view.
@@ -277,7 +365,7 @@ export default AbstractController.extend({
      * @param {EventObject} event
      * @returns {dialogs.FormViewDialog}
      */
-    _onAdd: function (event) {
+    _onAdd(event) {
         const item = event.data.item;
         // Initialize default values for creation
         const default_context = {};
@@ -315,7 +403,7 @@ export default AbstractController.extend({
             {onClose: () => event.data.callback()}
         );
         return false;
-    },
+    }
 
     /**
      * Triggered upon completion of a new record.
@@ -324,7 +412,7 @@ export default AbstractController.extend({
      * @param {RecordId} id
      * @returns {jQuery.Deferred}
      */
-    create_completed: function (id) {
+    create_completed(id) {
         return this._rpc({
             model: this.model.modelName,
             method: "read",
@@ -335,27 +423,27 @@ export default AbstractController.extend({
             var items = this.renderer.timeline.itemsData;
             items.add(new_event);
         });
-    },
+    }
 
     /**
      * Triggered upon completion of writing a record.
      * @param {ControllerOptions} options
      */
-    write_completed: function (options) {
+    write_completed(options) {
         const params = {
             domain: this.renderer.last_domains,
             context: this.context,
             groupBy: this.renderer.last_group_bys,
         };
         this.update(params, options);
-    },
+    }
 
     /**
      * Triggered upon confirm of removing a record.
      * @param {EventObject} event
      * @returns {jQuery.Deferred}
      */
-    remove_completed: function (event) {
+    remove_completed(event) {
         return this._rpc({
             model: this.modelName,
             method: "unlink",
@@ -373,5 +461,5 @@ export default AbstractController.extend({
             }
             event.data.callback(event.data.item);
         });
-    },
-});
+    }
+}

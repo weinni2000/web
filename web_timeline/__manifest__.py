@@ -4,7 +4,7 @@
 {
     "name": "Web timeline",
     "summary": "Interactive visualization chart to show events in time",
-    "version": "16.0.1.1.6",
+    "version": "18.0.1.1.6",
     "development_status": "Production/Stable",
     "author": "ACSONE SA/NV, "
     "Tecnativa, "
@@ -24,11 +24,13 @@
     "assets": {
         "web.assets_backend": [
             "web_timeline/static/src/scss/web_timeline.scss",
-            "web_timeline/static/src/js/timeline_view.js",
-            "web_timeline/static/src/js/timeline_renderer.js",
-            "web_timeline/static/src/js/timeline_controller.esm.js",
-            "web_timeline/static/src/js/timeline_model.js",
-            "web_timeline/static/src/js/timeline_canvas.js",
+            # "web_timeline/static/src/js/timeline/**/*",
+            # "web_timeline/static/src/js/*.js",
+            # "web_timeline/static/src/js/timeline_view.js",
+            # "web_timeline/static/src/js/timeline_renderer.js",
+            # "web_timeline/static/src/js/timeline_controller.esm.js",
+            # "web_timeline/static/src/js/timeline_model.js",
+            # "web_timeline/static/src/js/timeline_canvas.js",
             "web_timeline/static/src/xml/web_timeline.xml",
         ],
     },

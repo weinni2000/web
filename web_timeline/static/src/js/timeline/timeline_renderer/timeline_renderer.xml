@@ -1,0 +1,29 @@
+<templates xml:space="preserve">
+    <t t-name="web_timeline.TimelineRenderer" owl="1">
+        <div class="oe_timeline_view">
+            <div class="oe_timeline_buttons">
+                <button
+                    class="btn btn-default btn-sm oe_timeline_button_today"
+                >Today</button>
+                <div class="btn-group btn-sm">
+                    <button
+                        class="btn btn-default oe_timeline_button_scale_day"
+                    >Day</button>
+                    <button
+                        class="btn btn-default oe_timeline_button_scale_week"
+                    >Week</button>
+                    <button
+                        class="btn btn-default oe_timeline_button_scale_month"
+                    >Month</button>
+                    <button
+                        class="btn btn-default oe_timeline_button_scale_year"
+                    >Year</button>
+                </div>
+            </div>
+            <!--
+            <div class="oe_timeline_widget" />
+            -->
+            <TimelineCanvas />
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,9 @@
+{
+    "globals": {
+        "vis": false,
+        "Graph2d": false,
+        "timeline": false,
+        "swal": false,
+        "document": false,
+    }
+}

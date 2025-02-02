@@ -41,11 +41,11 @@ odoo.define("web_timeline.TimelineView", function (require) {
         /**
          * @override
          */
-        init: function (viewInfo, params) {
+        init: function (viewInfo) {
             this._super.apply(this, arguments);
-            this.modelName = this.controllerParams.modelName;
+            // This.modelName = this.controllerParams.modelName;
 
-            const action = params.action;
+            // const action = params.action;
             this.arch = this.rendererParams.arch;
             const attrs = this.arch.attrs;
             const date_start = attrs.date_start;
@@ -123,7 +123,7 @@ odoo.define("web_timeline.TimelineView", function (require) {
             this.controllerParams.date_start = date_start;
             this.controllerParams.date_stop = date_stop;
             this.controllerParams.date_delay = date_delay;
-            this.controllerParams.actionContext = action.context;
+            // This.controllerParams.actionContext = action.context;
             this.withSearchPanel = false;
         },
 

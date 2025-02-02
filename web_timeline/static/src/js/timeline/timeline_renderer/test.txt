@@ -1,0 +1,189 @@
+/** @odoo-module **/
+
+import { Component, onMounted, useRef } from "@odoo/owl";
+import { useService } from "@web/core/utils/hooks";
+
+import { TimelineCanvas } from "web_timeline.TimelineCanvas"; // Assuming TimelineCanvas is already refactored for OWL2
+import { _t } from "@web/core/l10n/translation";
+import { dateToMoment } from "@web/core/utils/dates";
+
+export class TimelineComponent extends Component {
+    setup() {
+        this.orm = useService("orm");
+        this.dialogService = useService("dialog");
+        this.notificationService = useService("notification");
+        this.timelineRef = useRef("timeline");
+        this.canvasRef = useRef("canvas");
+
+        this.initialDataLoaded = false;
+        this.timeline = null;
+
+        // Load initial data when the component is mounted
+        onMounted(this.initTimeline.bind(this));
+    }
+
+    /**
+     * Initialize the timeline.
+     */
+    async initTimeline() {
+        if (!this.props.dateStart) {
+            this.notificationService.add(
+                _t("Timeline view has not defined 'date_start' attribute."),
+                { type: "danger" }
+            );
+            return;
+        }
+
+        // Prepare options for the timeline
+        const options = {
+            height: this.props.minHeight || 300,
+            editable: this.getEditableOptions(),
+            start: dateToMoment().startOf("week"),
+            end: dateToMoment().endOf("week"),
+        };
+
+        // Initialize the timeline with vis.js
+        this.timeline = new vis.Timeline(
+            this.timelineRef.el,
+            [],
+            [],
+            options
+        );
+
+        this.timeline.on("click", this.onTimelineClick.bind(this));
+        this.timeline.on("doubleClick", this.onTimelineDoubleClick.bind(this));
+
+        // Load data and set it to the timeline
+        await this.loadData();
+    }
+
+    /**
+     * Load data into the timeline.
+     */
+    async loadData() {
+        const events = await this.fetchTimelineData();
+        const groups = await this.splitGroups(events);
+
+        this.timeline.setGroups(groups);
+        this.timeline.setItems(events.map(this.transformEvent.bind(this)));
+
+        if (!this.initialDataLoaded) {
+            this.timeline.fit();
+            this.initialDataLoaded = true;
+        }
+    }
+
+    /**
+     * Fetch timeline data from the ORM.
+     */
+    async fetchTimelineData() {
+        return this.orm.readGroup(this.props.model, [], this.props.groupBy, {});
+    }
+
+    /**
+     * Transform Odoo event object to timeline event object.
+     */
+    transformEvent(evt) {
+        const [start, end] = this.getEventDates(evt);
+        const group = evt[this.props.groupBy] || -1;
+
+        return {
+            id: evt.id,
+            content: evt.display_name || evt.name,
+            start,
+            end,
+            group,
+        };
+    }
+
+    /**
+     * Compute start and end dates for an event.
+     */
+    getEventDates(evt) {
+        const start = dateToMoment(evt[this.props.dateStart]);
+        const end = evt[this.props.dateStop]
+            ? dateToMoment(evt[this.props.dateStop])
+            : start.clone().add(evt[this.props.dateDelay] || 0, "hours");
+
+        return [start, end];
+    }
+
+    /**
+     * Get editable options for the timeline.
+     */
+    getEditableOptions() {
+        return {
+            updateTime: this.props.canUpdate,
+            updateGroup: this.props.canUpdate,
+            add: this.props.canCreate,
+            remove: this.props.canDelete,
+        };
+    }
+
+    /**
+     * Handle click events on the timeline.
+     */
+    onTimelineClick(event) {
+        if (event.what === "item") {
+            this.dialogService.add(_t("Item Clicked"), {
+                item: event.item,
+            });
+        }
+    }
+
+    /**
+     * Handle double-click events on the timeline.
+     */
+    onTimelineDoubleClick(event) {
+        if (event.what === "item") {
+            this.dialogService.add(_t("Item Double-Clicked"), {
+                item: event.item,
+            });
+        }
+    }
+
+    /**
+     * Split events into groups for the timeline.
+     */
+    async splitGroups(events) {
+        const groups = [];
+        for (const evt of events) {
+            const groupName = evt[this.props.groupBy];
+            if (groupName) {
+                groups.push({
+                    id: groupName[0],
+                    content: groupName[1],
+                });
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * Render the timeline component.
+     */
+    template() {
+        return (
+            <div class="timeline-container">
+                <div
+                    t-ref="timeline"
+                    class="oe_timeline_widget"
+                    style="height: 100%;"
+                ></div>
+                <canvas t-ref="canvas"></canvas>
+            </div>
+        );
+    }
+}
+
+TimelineComponent.props = {
+    model: String,
+    dateStart: String,
+    dateStop: String,
+    dateDelay: String,
+    groupBy: Array,
+    canCreate: Boolean,
+    canUpdate: Boolean,
+    canDelete: Boolean,
+    minHeight: Number,
+};
